@@ -50,6 +50,11 @@
     "minimum-stability": "dev",
     "prefer-stable": true,
     "extra": {
+        "phpstan": {
+            "includes": [
+                "extension.neon"
+            ]
+        },
         "typo3/cms": {
             "extension-key": "rmnd_routing"
         }

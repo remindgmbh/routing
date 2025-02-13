@@ -1,0 +1,4 @@
+parameters:
+	typo3:
+		contextApiGetAspectMapping:
+			extbase: Remind\Routing\Context\ExtbaseAspect
