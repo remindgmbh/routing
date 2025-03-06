@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Remind\Routing\Enhancer;
 
 use InvalidArgumentException;
-use Remind\Routing\Context\ExtbaseAspect;
+use Remind\Routing\Aspect\CTypeAwareInterface;
+use Remind\Routing\Aspect\PageAwareInterface;
 use TYPO3\CMS\Core\Authentication\BackendUserAuthentication;
-use TYPO3\CMS\Core\Context\ContextAwareInterface;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
 use TYPO3\CMS\Core\Database\Query\Restriction\DeletedRestriction;
@@ -237,9 +237,12 @@ class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnha
     {
         $aspect = $this->aspects[$name] ?? null;
         $aspect = $aspect instanceof MappableAspectInterface ? $aspect : null;
-        if ($aspect instanceof ContextAwareInterface) {
+        if ($aspect instanceof PageAwareInterface) {
             $page = $route->getOption('_page');
-            $aspect->getContext()->setAspect('extbase', new ExtbaseAspect($page, $this->cType));
+            $aspect->setPage($page);
+        }
+        if ($aspect instanceof CTypeAwareInterface) {
+            $aspect->setCType($this->cType);
         }
         return $aspect;
     }
