@@ -58,14 +58,14 @@ class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnha
         $this->parameters = $configuration['parameters'] ?? [];
         $this->cType = strtolower($configuration['extension'] . '_' . $configuration['plugin']);
 
-        if (isset($configuration['extension'], $configuration['plugin'])) {
+        if (isset($configuration['namespace'])) {
+            $this->namespace = $configuration['namespace'];
+        } elseif (isset($configuration['extension'], $configuration['plugin'])) {
             $extensionName = $configuration['extension'];
             $pluginName = $configuration['plugin'];
             $extensionName = str_replace(' ', '', ucwords(str_replace('_', ' ', $extensionName)));
             $pluginSignature = strtolower($extensionName . '_' . $pluginName);
             $this->namespace = 'tx_' . $pluginSignature;
-        } elseif (isset($configuration['namespace'])) {
-            $this->namespace = $configuration['namespace'];
         } else {
             throw new InvalidArgumentException(
                 'QueryExtbase route enhancer configuration is missing options ' .
