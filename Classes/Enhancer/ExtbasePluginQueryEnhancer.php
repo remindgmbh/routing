@@ -21,6 +21,7 @@ use TYPO3\CMS\Core\Routing\PageArguments;
 use TYPO3\CMS\Core\Routing\Route;
 use TYPO3\CMS\Core\Routing\RouteCollection;
 use TYPO3\CMS\Core\Routing\RouteNotFoundException;
+use TYPO3\CMS\Core\Utility\ArrayUtility;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnhancerInterface, ResultingInterface
@@ -96,10 +97,16 @@ class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnha
 
         $originalKeys = [];
 
-        foreach ($this->parameters['keys'] ?? [] as $originalKey => $key) {
-            $keyAspect = $this->aspects[$key] ?? null;
-            $modifiedKey = $keyAspect instanceof ModifiableAspectInterface ? $keyAspect->modify() : $key;
-            $originalKeys[$modifiedKey] = $originalKey;
+        if ($this->parameters['keys']) {
+            $this->arrayWalkRecursiveWithKey(
+                $this->parameters['keys'],
+                function (string $key, array $originalKeyArr) use (&$originalKeys): void {
+                    $originalKey = implode('/', $originalKeyArr);
+                    $keyAspect = $this->aspects[$key] ?? null;
+                    $modifiedKey = $keyAspect instanceof ModifiableAspectInterface ? $keyAspect->modify() : $key;
+                    $originalKeys[$modifiedKey] = $originalKey;
+                }
+            );
         }
 
         $availableKeys = array_map(function (int|string $key) use ($originalKeys) {
@@ -132,7 +139,12 @@ class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnha
                     1678258126
                 );
             }
-            $deflatedParameters[$key] = is_string($value) ? $resolvedValue : json_decode($resolvedValue, true);
+
+            $deflatedParameters = ArrayUtility::setValueByPath(
+                $deflatedParameters,
+                $key,
+                is_string($value) ? $resolvedValue : json_decode($resolvedValue, true)
+            );
         }
 
         $defaultPageRoute->setOption('deflatedParameters', $deflatedParameters);
@@ -163,29 +175,33 @@ class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnha
 
         $deflatedParameters = [];
 
-        foreach ($namespaceParameters as $key => $value) {
-            $valueAspectName = $this->parameters['values'][$key];
-            $aspect = $this->getAspect($valueAspectName, $defaultPageRoute);
-            $generatedValue = $aspect?->generate(is_string($value) ? $value : (json_encode($value) ?: ''));
-            if (!$generatedValue) {
-                throw new InvalidArgumentException(
-                    sprintf(
-                        'No aspect found for parameter \'%s\' with value \'%s\' or generated null',
-                        $key,
-                        is_string($value) ? $value : json_encode($value),
-                    ),
-                    1678262293
-                );
+        $this->arrayWalkRecursiveWithKey(
+            $namespaceParameters,
+            function (string|array $value, array $keys) use ($defaultPageRoute, &$deflatedParameters): void {
+                $key = implode('/', $keys);
+                $valueAspectName = $this->parameters['values'][$key];
+                $aspect = $this->getAspect($valueAspectName, $defaultPageRoute);
+                $generatedValue = $aspect?->generate(is_string($value) ? $value : (json_encode($value) ?: ''));
+                if (!$generatedValue) {
+                    throw new InvalidArgumentException(
+                        sprintf(
+                            'No aspect found for parameter \'%s\' with value \'%s\' or generated null',
+                            $key,
+                            is_string($value) ? $value : json_encode($value),
+                        ),
+                        1678262293
+                    );
+                }
+                $generatedValue = is_string($value) ? $generatedValue : json_decode($generatedValue, true);
+                $defaultValue = $this->defaults[$key] ?? null;
+                if ($defaultValue !== $generatedValue) {
+                    $newKey = $this->parameters['keys'][$key] ?? null;
+                    $keyAspect = $this->aspects[$newKey] ?? null;
+                    $key = $keyAspect instanceof ModifiableAspectInterface ? $keyAspect->modify() : $newKey ?? $key;
+                    $deflatedParameters[$key] = $generatedValue;
+                }
             }
-            $generatedValue = is_string($value) ? $generatedValue : json_decode($generatedValue, true);
-            $defaultValue = $this->defaults[$key] ?? null;
-            if ($defaultValue !== $generatedValue) {
-                $newKey = $this->parameters['keys'][$key] ?? null;
-                $keyAspect = $this->aspects[$newKey] ?? null;
-                $key = $keyAspect instanceof ModifiableAspectInterface ? $keyAspect->modify() : $newKey ?? $key;
-                $deflatedParameters[$key] = $generatedValue;
-            }
-        }
+        );
 
         $defaultPageRoute->setOption('_enhancer', $this);
         $defaultPageRoute->setOption('deflatedParameters', $deflatedParameters);
@@ -271,6 +287,23 @@ class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnha
 
 
         return (bool) $field;
+    }
+
+    /**
+     * @param mixed[] $array
+     * @param string[] $keys
+     */
+    private function arrayWalkRecursiveWithKey(array &$array, callable $callback, array $keys = []): void
+    {
+        foreach ($array as $key => &$value) {
+            $keys[] = $key;
+            if (is_array($value)) {
+                $this->arrayWalkRecursiveWithKey($value, $callback, $keys);
+            } else {
+                call_user_func_array($callback, [&$value, $keys]);
+            }
+            array_pop($keys);
+        }
     }
 
     private function getBackendUser(): ?BackendUserAuthentication
