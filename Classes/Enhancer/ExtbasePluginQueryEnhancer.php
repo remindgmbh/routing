@@ -22,6 +22,7 @@ use TYPO3\CMS\Core\Routing\Route;
 use TYPO3\CMS\Core\Routing\RouteCollection;
 use TYPO3\CMS\Core\Routing\RouteNotFoundException;
 use TYPO3\CMS\Core\Utility\ArrayUtility;
+use TYPO3\CMS\Core\Utility\Exception\MissingArrayPathException;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnhancerInterface, ResultingInterface
@@ -97,16 +98,10 @@ class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnha
 
         $originalKeys = [];
 
-        if ($this->parameters['keys']) {
-            $this->arrayWalkRecursiveWithKey(
-                $this->parameters['keys'],
-                function (string $key, array $originalKeyArr) use (&$originalKeys): void {
-                    $originalKey = implode('/', $originalKeyArr);
-                    $keyAspect = $this->aspects[$key] ?? null;
-                    $modifiedKey = $keyAspect instanceof ModifiableAspectInterface ? $keyAspect->modify() : $key;
-                    $originalKeys[$modifiedKey] = $originalKey;
-                }
-            );
+        foreach ($this->parameters['keys'] ?? [] as $originalKey => $key) {
+            $keyAspect = $this->aspects[$key] ?? null;
+            $modifiedKey = $keyAspect instanceof ModifiableAspectInterface ? $keyAspect->modify() : $key;
+            $originalKeys[$modifiedKey] = $originalKey;
         }
 
         $availableKeys = array_map(function (int|string $key) use ($originalKeys) {
@@ -175,10 +170,9 @@ class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnha
 
         $deflatedParameters = [];
 
-        $this->arrayWalkRecursiveWithKey(
-            $namespaceParameters,
-            function (string|array $value, array $keys) use ($defaultPageRoute, &$deflatedParameters): void {
-                $key = implode('/', $keys);
+        foreach (array_keys($this->parameters['keys'] ?? []) as $key) {
+            try {
+                $value = ArrayUtility::getValueByPath($namespaceParameters, (string) $key);
                 $valueAspectName = $this->parameters['values'][$key];
                 $aspect = $this->getAspect($valueAspectName, $defaultPageRoute);
                 $generatedValue = $aspect?->generate(is_string($value) ? $value : (json_encode($value) ?: ''));
@@ -200,8 +194,10 @@ class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnha
                     $key = $keyAspect instanceof ModifiableAspectInterface ? $keyAspect->modify() : $newKey ?? $key;
                     $deflatedParameters[$key] = $generatedValue;
                 }
+            } catch (MissingArrayPathException $e) {
+                // Do nothing
             }
-        );
+        }
 
         $defaultPageRoute->setOption('_enhancer', $this);
         $defaultPageRoute->setOption('deflatedParameters', $deflatedParameters);
@@ -287,23 +283,6 @@ class ExtbasePluginQueryEnhancer extends AbstractEnhancer implements RoutingEnha
 
 
         return (bool) $field;
-    }
-
-    /**
-     * @param mixed[] $array
-     * @param string[] $keys
-     */
-    private function arrayWalkRecursiveWithKey(array &$array, callable $callback, array $keys = []): void
-    {
-        foreach ($array as $key => &$value) {
-            $keys[] = $key;
-            if (is_array($value)) {
-                $this->arrayWalkRecursiveWithKey($value, $callback, $keys);
-            } else {
-                call_user_func_array($callback, [&$value, $keys]);
-            }
-            array_pop($keys);
-        }
     }
 
     private function getBackendUser(): ?BackendUserAuthentication
