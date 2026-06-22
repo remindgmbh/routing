@@ -19,3 +19,14 @@ jobs:
           tools: composer:v2
       - run: composer install
       - run: composer run-script static-analysis
+  phpunit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+            php-version: 8.3
+            extensions: "intl,xdebug"
+            tools: composer:v2
+      - run: composer install
+      - run: composer run-script phpunit
